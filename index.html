@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Python Web IDE</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/material-darker.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/theme/eclipse.min.css">
+  <style>
+    :root {
+      --bg: #1e1e1e;
+      --text: #ffffff;
+    }
+    [data-theme="light"] {
+      --bg: #ffffff;
+      --text: #000000;
+    }
+    body {
+      margin: 0;
+      height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      font-family: sans-serif;
+    }
+    #editor { flex: 1; }
+    #output {
+      background: #111;
+      color: #0f0;
+      padding: 1em;
+      white-space: pre-wrap;
+      height: 20vh;
+      overflow-y: auto;
+    }
+    .toolbar {
+      display: flex;
+      gap: 0.5em;
+      padding: 0.5em;
+      background: #222;
+    }
+    button, select {
+      padding: 0.5em 1em;
+      font-size: 1em;
+    }
+    #exec-time {
+      padding-left: 1em;
+      color: yellow;
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="runCode()">실행</button>
+    <button onclick="measureTime()">타이머 실행</button>
+    <select onchange="setTheme(this.value)">
+      <option value="dark">다크</option>
+      <option value="light">라이트</option>
+    </select>
+    <span id="exec-time"></span>
+  </div>
+  <textarea id="code" style="display:none"></textarea>
+  <div id="editor"></div>
+  <div id="output">[출력 결과]</div>
+
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/mode/python/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/edit/matchbrackets.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.5/addon/hint/show-hint.min.js"></script>
+  <script>
+    let pyodide;
+    let editor;
+    let pyodideReady = false;
+
+    async function loadPyodideAndPackages() {
+      pyodide = await loadPyodide();
+      await pyodide.loadPackage("micropip");
+      pyodideReady = true;
+    }
+    loadPyodideAndPackages();
+
+    window.addEventListener("load", () => {
+      editor = CodeMirror(document.getElementById("editor"), {
+        value: localStorage.getItem("userCode") || 'print("Hello from Python!")',
+        mode: "python",
+        theme: "material-darker",
+        lineNumbers: true,
+        matchBrackets: true,
+        indentUnit: 4,
+        tabSize: 4,
+        indentWithTabs: false,
+        autofocus: true
+      });
+
+      editor.on("change", () => {
+        localStorage.setItem("userCode", editor.getValue());
+      });
+    });
+
+    async function runCode() {
+      if (!pyodideReady) return;
+      const outputDiv = document.getElementById("output");
+      outputDiv.textContent = "";
+      const code = editor.getValue();
+
+      try {
+        pyodide.setStdout({ batched: (s) => outputDiv.textContent += s });
+        const reqMatch = code.match(/^\s*#\s*requirements:\s*(.+)$/m);
+        if (reqMatch) {
+          const pkgs = reqMatch[1].split(/[ ,]+/);
+          const micropip = pyodide.pyimport("micropip");
+          await micropip.install(pkgs);
+        }
+        await pyodide.runPythonAsync(code);
+      } catch (err) {
+        outputDiv.textContent += "\n[오류] " + err;
+      }
+    }
+
+    async function measureTime() {
+      if (!pyodideReady) return;
+      const start = performance.now();
+      await runCode();
+      const end = performance.now();
+      document.getElementById("exec-time").textContent = `실행시간: ${(end - start).toFixed(2)} ms`;
+    }
+
+    function setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      const cmTheme = theme === 'light' ? 'eclipse' : 'material-darker';
+      if (editor) editor.setOption("theme", cmTheme);
+    }
+  </script>
+</body>
+</html>
